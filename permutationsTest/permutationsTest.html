@@ -1,6 +1,6 @@
-<!DOCTYPE html>
+<!doctype html>
 <!-- See Arithmetic Operators Test for explanations.-->
-<html>
+<html lang="en">
   <head>
     <title>AEC-to-WebAssembly compiler - Permutations Test</title>
     <style type="text/css">
@@ -29,7 +29,18 @@
     think I'm finally able to implement most of the program in AEC and only use
     JavaScript for helper functions. So, I'll try to write a program that prints
     all the permutations of the digits of a number, with most of the program
-    written in AEC.
+    written in AEC.<br />
+    This is more-or-less a port of the <code>permutations.aec</code> from the
+    x86 dialect of AEC to the WebAssembly dialect of AEC. The original
+    <code>permutations.aec</code> is available in
+    <a href="Duktape.zip">this ZIP archive</a> (and you need to produce the
+    binary to run yourself) and the binary file is available in
+    <a
+      href="https://github.com/FlatAssembler/ArithmeticExpressionCompiler/raw/master/ArithmeticExpressionCompiler.zip"
+      >this ZIP archive</a
+    >
+    (but, if my computer is infected with malware, that ZIP archive will
+    probably be as well).
     <br />
     <b>This only works in very modern browsers.</b> I'm not too interested in
     targeting archaic browsers here. This only works in Firefox 62 and newer or
@@ -46,14 +57,13 @@
     <span id="format_as_code"></span>
     <br />
     You can see the source code of the AEC program
-    <a
-      href="permutationsTest.aec.html"
-      >here</a
-    >.
+    <a href="permutationsTest.aec.html">here</a>. When you want to see a similar
+    but more complicated example, see
+    <a href="nQueensPuzzle.html">the n-Queens-Puzzle</a>.
     <script type="text/javascript">
       const stack_pointer = new WebAssembly.Global(
         { value: "i32", mutable: true },
-        0
+        0,
       );
       let memory = new WebAssembly.Memory({ initial: 1 });
       function printInt(integer) {
@@ -90,7 +100,7 @@
         });
       function invokeAECfunctions() {
         let originalNumber = parseInt(
-          document.getElementById("enterTheNumber").value
+          document.getElementById("enterTheNumber").value,
         );
         printPermutationsOfDigits(originalNumber);
       }

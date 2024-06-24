@@ -80,6 +80,7 @@ void simpleParserTests() {
         "(and (< (+ 2 2) 5) (< 3.14159265359 3.2))"},
        {"1-2-3-4", "(- (- (- 1 2) 3) 4)"},
        {"a:=b:=c", "(:= a (:= b c))"},
+       {"2+2<=5", "(<= (+ 2 2) 5)"},
        {"3.14.16", "(. 3.14 16)"},
        {"1*(2+3)", "(* 1 (+ 2 3))"},
        {"pow(2+2/*A nonsensical expression,\nbut good for "
@@ -119,11 +120,19 @@ void interpreterTests() {
        {"(2+2=4)?2:0", "2"},
        {"mod(5,2)", "1"},
        {"(2+2>5?3+3<7?1:-2:2+2-4<1?0:2+2<4?-1:-3)+('A'+2='C'?0:-1)", "0"},
+       {"1 ? 2 ? 3 : 4 : 5","3"}, // https://www.reddit.com/r/ProgrammingLanguages/comments/10rxexc/comment/j72oxrl/?utm_source=reddit&utm_medium=web2x&context=3
        {"0xff", "255"},
        {"0x41='A' and 0xff=255", "1"},
        {"0x42='A' or 0x2b=127", "0"},
-       {"5/2","2" /*A simple division in a compile-time integer constant was
-                    crashing the compiler all the way up to version v1.4.3*/}
+       {"5/2", "2" /*A simple division in a compile-time integer constant was
+                     crashing the compiler all the way up to version v1.4.3*/},
+       {"3 >= 2 >= 1", "1"},
+       {R"(
+       	       (1 < 2 < 3) and
+	       not(2 < 3 < 1) and
+	       (-3 < -2 < -1) and
+	       (3 > 2 > 1)
+       )", "1"}
       });
   for (unsigned int i = 0; i < tests.size(); i++) {
     std::string result = std::to_string(
@@ -292,7 +301,16 @@ void parserTests() {
         "innerNumber))"},
        {"InstantiateStructure QuadraticEquationSolution solutions[1 * 2 * 3];",
         "(InstantiateStructure (QuadraticEquationSolution (solutions (* (* 1 "
-        "2) 3))))"}});
+        "2) 3))))"},
+       {
+           R"(
+	       Function f(Decimal64 milliard := pow(10, 9)) Which Returns Nothing Does
+	       		// This function only parses correctly as of AECforWebAssembly v2.7.0.
+			Nothing;
+	       EndFunction
+	       )",
+           "(Function (f (Decimal64 (milliard (:= (pow 10 9))))) (Returns "
+           "Nothing) (Does Nothing))"}});
   for (unsigned int i = 0; i < tests.size(); i++) {
     std::string result = TreeNode::parse(TreeNode::tokenize(tests[i].input))[0]
                              .getLispExpression();

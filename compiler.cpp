@@ -13,7 +13,12 @@
 
 #include "bitManipulations.cpp"
 #include "semanticAnalyzer.cpp"
-#include <ciso646> // Necessary for Microsoft C++ Compiler.
+#include <ciso646> // Necessary for Microsoft C++ Compiler (for `and` and `or`).
+
+const char *throwNotImplementedException(std::string message) {
+  throw new NotImplementedException(message);
+  return NULL;
+}
 
 AssemblyCode convertToInteger32(
     const TreeNode &
@@ -223,7 +228,7 @@ AssemblyCode convertTo(const TreeNode &node, const std::string &type,
 }
 
 AssemblyCode TreeNode::compile(CompilationContext context) const {
-  std::string typeOfTheCurrentNode = getType(context);
+  const std::string typeOfTheCurrentNode = getType(context);
   AssemblyCode::AssemblyType returnType;
   if (isPointerType(typeOfTheCurrentNode))
     returnType = AssemblyCode::AssemblyType::i32;
@@ -512,6 +517,15 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
               << std::endl;
           throw CorruptCompilationContextException(context);
         }
+        if (context.structureSizes[nodeWithStructureName.text] == 0) {
+          std::cerr << "Line " << nodeWithStructureName.lineNumber
+                    << ", Column " << nodeWithStructureName.columnNumber
+                    << ", Compiler error: Cannot instantiate an empty "
+                       "structure as a local variable! The structure \""
+                    << nodeWithStructureName.text << "\" has the size of zero."
+                    << std::endl;
+          exit(1);
+        }
         for (TreeNode instanceName : nodeWithStructureName.children) {
           if (!isValidVariableName(instanceName.text) ||
               AECkeywords.count(instanceName.text)) {
@@ -743,7 +757,7 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
       } else if (childNode.text == ":=" &&
                  context.structureSizes.count(
                      childNode.getType(context))) { // Structure assignments.
-        std::string structureName = childNode.getType(context);
+        const std::string structureName = childNode.getType(context);
         TreeNode fakeInnerFunctionNode(
             "Does", childNode.lineNumber,
             childNode
@@ -819,7 +833,8 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
         fakeContext.stackSizeOfThisScope = 0;
         fakeContext.stackSizeOfThisFunction = 0;
         assembly += fakeInnerFunctionNode.compile(fakeContext) + "\n";
-      } else if ((childNode.text.size() == 2 and childNode.text[1] == '=') or
+      } else if ((childNode.text.size() == 2 and childNode.text[1] == '=' and
+                  childNode.text[0] != '<' and childNode.text[0] != '>') or
                  childNode.getType(context) == "Nothing")
         assembly += std::string(childNode.compile(context)) + "\n";
       else {
@@ -843,9 +858,96 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
                 ") ;;Pointer to " + text;
   else if ((text == "asm(" or text == "asm_i32(" or text == "asm_i64(" or
             text == "asm_f32(" or text == "asm_f64(") and
-           children.size() == 1)
-    assembly += convertInlineAssemblyToAssembly(children.at(0));
-  else if (text == "nan")
+           children.size() == 1) {
+    auto originalInlineAssembly =
+        convertInlineAssemblyToAssembly(children.at(0));
+    std::string adjustedInlineAssembly, variableName;
+    bool areWeInsideAVariableName = false, areWeInsideAComment = false,
+         areWeInsideAString = false;
+    int depthOfThePointerInSExpression = 0;
+    char howDidTheStringStart = '\"';
+    for (char currentCharacter : originalInlineAssembly) {
+      if (not(areWeInsideAComment) and not(areWeInsideAString) and
+          currentCharacter == '(')
+        depthOfThePointerInSExpression++;
+      if (not(areWeInsideAComment) and not(areWeInsideAString) and
+          currentCharacter == ')') {
+        depthOfThePointerInSExpression--;
+        if (depthOfThePointerInSExpression < 0)
+          std::cerr << "Line " << lineNumber << ", Column " << columnNumber
+                    << ", Compiler warning: Mismatched parantheses in the "
+                       "inline assembly (there is an unexpected ')')."
+                    << std::endl;
+      }
+      if (not(areWeInsideAString) and not(areWeInsideAComment) and
+          (currentCharacter == '\'' or currentCharacter == '\"')) {
+        areWeInsideAString = true;
+        adjustedInlineAssembly += currentCharacter;
+        howDidTheStringStart = currentCharacter;
+      } else if (areWeInsideAString and
+                 currentCharacter == howDidTheStringStart) {
+        areWeInsideAString = false;
+        adjustedInlineAssembly += currentCharacter;
+      } else if (areWeInsideAComment and currentCharacter != '\n')
+        adjustedInlineAssembly += currentCharacter;
+      else if (areWeInsideAComment and currentCharacter == '\n') {
+        adjustedInlineAssembly += '\n';
+        areWeInsideAComment = false;
+      } else if (not(areWeInsideAComment) and not(areWeInsideAString) and
+                 currentCharacter == ';') {
+        areWeInsideAComment = true;
+        adjustedInlineAssembly += ';';
+      } else if (not(areWeInsideAVariableName) and currentCharacter != '%')
+        adjustedInlineAssembly += currentCharacter;
+      else if (not(areWeInsideAVariableName) and currentCharacter == '%' and
+               not(areWeInsideAComment) and not(areWeInsideAString)) {
+        variableName = "";
+        areWeInsideAVariableName = true;
+      } else if (areWeInsideAVariableName and
+                 (std::isspace(currentCharacter) or currentCharacter == ')')) {
+        areWeInsideAVariableName = false;
+        TreeNode nodeRepresentingPointer(variableName, lineNumber,
+                                         columnNumber);
+        nodeRepresentingPointer.children.push_back(TreeNode(
+            "0", lineNumber,
+            columnNumber)); // What if somebody tries to insert a
+                            // pointer to an array into inline assembly?
+        adjustedInlineAssembly +=
+            nodeRepresentingPointer.compileAPointer(context)
+                .indentBy(depthOfThePointerInSExpression)
+                .substr(depthOfThePointerInSExpression) +
+            "\n";
+        adjustedInlineAssembly += currentCharacter;
+      } else if (areWeInsideAVariableName and currentCharacter == '%') {
+        adjustedInlineAssembly += "%";
+        areWeInsideAVariableName = false;
+        if (variableName != "")
+          std::cerr << "Line " << lineNumber << ", Column " << columnNumber
+                    << ", Compiler warning: The string \"" << variableName
+                    << "\" will not be passed to the assembler!" << std::endl;
+      } else if (areWeInsideAVariableName) {
+        variableName += currentCharacter;
+      }
+    }
+    if (areWeInsideAVariableName) {
+      std::cerr
+          << "Line " << lineNumber << ", Column " << columnNumber
+          << ", Compiler error: In the inline assembly, the variable name "
+          << JSONifyString(variableName) << " is not terminated!" << std::endl;
+      std::exit(1);
+    }
+    if (areWeInsideAString)
+      std::cerr << "Line " << lineNumber << ", Column " << columnNumber
+                << ", Compiler warning: There is an unterminated string "
+                   "literal inside the inline assembly, a mismatched `"
+                << howDidTheStringStart << "` character." << std::endl;
+    if (depthOfThePointerInSExpression > 0)
+      std::cerr << "Line " << lineNumber << ", Column " << columnNumber
+                << ", Compiler warning: Mismatched parantheses in the inline "
+                   "assembly (there are too many '('-s)."
+                << std::endl;
+    assembly += adjustedInlineAssembly + "\n";
+  } else if (text == "nan")
     assembly += "(f32.reinterpret_i32\n\t(i32.const -1) ;;IEE754 for "
                 "not-a-number is 0xffffffff=-1.\n)";
   else if (context.variableTypes.count(text) or text == "." || text == "->") {
@@ -955,9 +1057,9 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
           << ", Compiler warning: You are assigning a pointer to a type \""
           << typeOfTheCurrentNode << "\", this is likely an error!"
           << std::endl;
-  } else if (text.size() == 2 and
-             text[1] ==
-                 '=') // The assignment operators "+=", "-=", "*=" and "/="...
+  } else if (text.size() == 2 and text[1] == '=' and text[0] != '<' and
+             text[0] !=
+                 '>') // The assignment operators "+=", "-=", "*=" and "/="...
   {
     if (children.at(0).text.back() ==
         '[') { // https://github.com/FlatAssembler/AECforWebAssembly/issues/15
@@ -1089,12 +1191,12 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
                   << ", Compiler error: It's not specified what to return from "
                      "a function that's supposed to return \""
                   << currentFunction.returnType
-                  << "\", aborting the compilation (or else the compiler will "
-                     "segfault)!"
+                  << "\", aborting the compilation (or else vector::at will "
+                     "throw an exception)!"
                   << std::endl;
         exit(1);
       }
-      TreeNode valueToBeReturned = children[0];
+      TreeNode valueToBeReturned = children.at(0);
       if (valueToBeReturned.text == ":=") {
         TreeNode tmp = valueToBeReturned;
         assembly += valueToBeReturned.compile(context) + "\n";
@@ -1118,18 +1220,18 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
         // constructors in Java, C# and JavaScript (there, variables don't hold
         // objects but pointers to objects, and, as confusing as it can be at
         // first, it can't lead to this kind of problems).
-        if (tmp.children[0].getLispExpression() !=
+        if (tmp.children.at(0).getLispExpression() !=
             valueToBeReturned.getLispExpression()) {
           std::cerr << "Line " << lineNumber << ", Column " << columnNumber
                     << ", Internal compiler error: Some part of the compiler "
                        "has changed a part of the AST from "
-                    << tmp.children[0].getLispExpression() << " into "
+                    << tmp.children.at(0).getLispExpression() << " into "
                     << valueToBeReturned.getLispExpression()
                     << ", which shouldn't be possible. The compilation will "
                        "continue, but be warned it might produce wrong code "
                        "because of this."
                     << std::endl;
-          valueToBeReturned = tmp.children[0];
+          valueToBeReturned = tmp.children.at(0);
         }
       }
       assembly +=
@@ -1261,9 +1363,31 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
           "\n" +
           convertTo(children[1], typeOfTheCurrentNode, context).indentBy(1) +
           "\n)";
-  } else if (text == "<" or text == ">") {
-    std::string firstType = children[0].getType(context);
-    std::string secondType = children[1].getType(context);
+  } else if (text == "<" or text == ">" or text == "<=" or text == ">=") {
+    if (children.at(0).text ==
+        text) // Chained comparisons, such as `a < b < c`.
+    {
+      TreeNode andNode("and", lineNumber, columnNumber),
+          secondChild(text, lineNumber, columnNumber);
+      secondChild.children = {children.at(0).children.at(1), children.at(1)};
+      andNode.children = {children.at(0), secondChild};
+      std::cerr
+          << "Line " << lineNumber << ", Column " << columnNumber
+          << ", Compiler warning: Chained comparisons are not implemented "
+             "correctly in this compiler. The middle term, in this case \""
+          << children.at(0).children.at(1).text
+          << "\", will be evaluated twice, possibly leading to unintended side "
+             "effects. I am sorry about that, but, thus far, there does not "
+             "seem to be a simple solution given the way the compiler is "
+             "structured. I've started a StackExchange thread about that "
+             "problem: https://langdev.stackexchange.com/q/3755/330"
+          << std::endl;
+      return ";;Chained comparison, converting " + getLispExpression() +
+             " to " + andNode.getLispExpression() + "\n" +
+             andNode.compile(context);
+    }
+    std::string firstType = children.at(0).getType(context);
+    std::string secondType = children.at(1).getType(context);
     std::string strongerType;
     if (isPointerType(firstType) and isPointerType(secondType))
       strongerType =
@@ -1278,18 +1402,32 @@ AssemblyCode TreeNode::compile(CompilationContext context) const {
         assemblyType == AssemblyCode::AssemblyType::i64)
       assembly +=
           "(" + stringRepresentationOfWebAssemblyType.at(assemblyType) +
-          (text == "<" ? ".lt_s\n" : ".gt_s\n") +
+          (text == "<"    ? ".lt_s\n"
+           : text == ">"  ? ".gt_s\n"
+           : text == "<=" ? ".le_s\n"
+           : text == ">=" ? ".ge_s\n"
+                          : throwNotImplementedException(
+                                "The comparison operator `" + text +
+                                "` is not implemeneted!")) +
           convertTo(children[0], strongerType, context).indentBy(1) + "\n" +
           convertTo(children[1], strongerType, context).indentBy(1) + "\n)";
     else // If we are comparing decimal (floating-point) numbers, rather than
          // integers...
       assembly +=
           "(" + stringRepresentationOfWebAssemblyType.at(assemblyType) +
-          (text == "<" ? ".lt\n" : ".gt\n") +
+          (text == "<"    ? ".lt\n"
+           : text == ">"  ? ".gt\n"
+           : text == "<=" ? ".le\n"
+           : text == ">=" ? ".ge\n"
+                          : throwNotImplementedException(
+                                "The comparison operator `" + text +
+                                "` is not implemeneted!")) +
           convertTo(children[0], strongerType, context).indentBy(1) + "\n" +
           convertTo(children[1], strongerType, context).indentBy(1) + "\n)";
   } else if (text == "=" &&
              context.structureSizes.count(children.at(0).getType(context))) {
+    // I am guessing that there is a bug somewhere in the following lines:
+    // https://github.com/FlatAssembler/AECforWebAssembly/issues/20
     if (children[0].getType(context) != children.at(1).getType(context))
       std::cerr
           << "Line " << lineNumber << ", Column " << columnNumber
@@ -1619,14 +1757,26 @@ TreeNode::compileAPointer(const CompilationContext &context) const {
                 << std::endl;
       exit(1);
     }
+    const std::string typeOfTheCurrentNode = getType(context);
+    if (not(isPointerType(typeOfTheCurrentNode)) and
+        not(basicDataTypeSizes.count(typeOfTheCurrentNode)) and
+        not(context.structureSizes.count(typeOfTheCurrentNode))) {
+      std::cerr << "Line " << lineNumber << ", Column " << columnNumber
+                << ", Internal compiler error: The compiler has apparently "
+                   "lost the track of the size of the structure named `"
+                << typeOfTheCurrentNode << "`!" << std::endl;
+      throw CorruptCompilationContextException(context);
+    }
     return AssemblyCode(
         "(i32.add\n\t(i32.sub\n\t\t(global.get "
         "$stack_pointer)\n\t\t(i32.const " +
             std::to_string(context.localVariables.at(text)) + ") ;;" + text +
             "\n\t)\n\t(i32.mul\n\t\t(i32.const " +
-            std::to_string(basicDataTypeSizes.count(getType(context))
-                               ? basicDataTypeSizes.at(getType(context))
-                               : context.structureSizes.at(getType(context))) +
+            std::to_string(
+                isPointerType(typeOfTheCurrentNode) ? 4
+                : basicDataTypeSizes.count(typeOfTheCurrentNode)
+                    ? basicDataTypeSizes.at(typeOfTheCurrentNode)
+                    : context.structureSizes.at(typeOfTheCurrentNode)) +
             ")\n" +
             std::string(convertToInteger32(children[0], context).indentBy(2)) +
             "\n\t)\n)",

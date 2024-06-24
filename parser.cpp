@@ -24,7 +24,7 @@ std::vector<TreeNode>
 TreeNode::applyBinaryOperators(std::vector<TreeNode> input,
                                std::vector<std::string> operators,
                                Associativity associativity) {
-  auto loop_body = [&](int &i) -> void {
+  auto loop_body = [bitand](int bitand i) -> void {
     if ((long unsigned)i >= input.size()) {
       std::cerr << "Line " << input[0].lineNumber << ", Column "
                 << input[0].columnNumber
@@ -279,7 +279,12 @@ std::vector<TreeNode> TreeNode::parseExpression(std::vector<TreeNode> input) {
       parsedExpression.erase(parsedExpression.begin() + i + 1);
     }
   std::vector<std::vector<std::string>> leftAssociativeBinaryOperators(
-      {{".", "->"}, {"*", "/"}, {"-", "+"}, {"<", ">", "="}, {"and"}, {"or"}});
+      {{".", "->"},
+       {"*", "/"},
+       {"-", "+"},
+       {"<", ">", "=", "<=", ">="},
+       {"and"},
+       {"or"}});
   for (unsigned int i = 0; i < leftAssociativeBinaryOperators.size(); i++)
     parsedExpression = applyBinaryOperators(parsedExpression,
                                             leftAssociativeBinaryOperators[i],
@@ -502,8 +507,9 @@ std::vector<TreeNode> TreeNode::parse(std::vector<TreeNode> input) {
           std::cerr << "Line " << input.at(functionName).lineNumber
                     << ", Column: " << input.at(functionName).columnNumber
                     << ", Parser error: Parenthesis in \""
-                    << input.at(functionName).text << "\" not closed!";
-          break;
+                    << input.at(functionName).text << "\" not closed!"
+                    << std::endl;
+          return input;
         }
         if (input.at(endOfFunctionSignature).text == ")")
           counterOfParentheses--;
@@ -517,14 +523,29 @@ std::vector<TreeNode> TreeNode::parse(std::vector<TreeNode> input) {
                   input.begin() + endOfFunctionSignature);
       TreeNodes argument;
       for (unsigned int i = 0; i < functionArguments.size() + 1; i++) {
+        static int counter_of_open_parentheses = 0;
+        if (i == functionArguments.size() and
+            counter_of_open_parentheses != 0) {
+          std::cerr << "Line " << functionArguments.at(0).lineNumber
+                    << ", Coulumn " << functionArguments.at(0).columnNumber
+                    << ", Parser error: Mismatched parentheses!" << std::endl;
+          exit(1);
+        }
         if (i == functionArguments.size() or
-            functionArguments.at(i).text == ",") {
+            (functionArguments.at(i).text == "," and
+             counter_of_open_parentheses == 0)) {
           argument = parseVariableDeclaration(argument);
           if (!argument.empty())
             input[functionName].children.push_back(argument[0]);
           argument = TreeNodes();
-        } else
+        } else {
           argument.push_back(functionArguments.at(i));
+          if (functionArguments.at(i).text.substr(
+                  functionArguments.at(i).text.size() - 1) == "(")
+            counter_of_open_parentheses++;
+          if (functionArguments.at(i).text == ")")
+            counter_of_open_parentheses--;
+        }
       }
       if (functionName > input.size() - 5) {
         std::cerr

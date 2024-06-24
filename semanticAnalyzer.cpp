@@ -20,6 +20,21 @@ std::string getStrongerType(const int lineNumber, const int columnNumber,
               << std::endl;
     exit(1);
   }
+  if (firstType != secondType and
+      ((!TreeNode::basicDataTypeSizes.count(firstType) and
+        !isPointerType(firstType)) or
+       (!TreeNode::basicDataTypeSizes.count(secondType) and
+        !isPointerType(secondType)))) {
+    std::cerr << "Line " << lineNumber << ", Column " << columnNumber
+              << ", Compiler error: Some part of the compiler tried to compare "
+                 "two different structure types, \""
+              << firstType << "\" and \"" << secondType
+              << "\", for strength. You have presumably put two different "
+                 "structure types as the second and the third operator of the "
+                 "ternary conditional `?:` operator."
+              << std::endl;
+    exit(1);
+  }
   if (isPointerType(firstType) and !isPointerType(secondType))
     return firstType;
   if (isPointerType(secondType) and !isPointerType(firstType))
@@ -127,7 +142,8 @@ std::string TreeNode::getType(const CompilationContext &context) const {
     throw CorruptCompilationContextException(context);
   }
   if (text == "and" or text == "or" or text == "<" or text == ">" or
-      text == "=" or text == "not(" or text == "invertBits(") {
+      text == "=" or text == "<=" or text == ">=" or text == "not(" or
+      text == "invertBits(") {
     if (children.empty()) {
       std::cerr << "Line " << lineNumber << ", Column " << columnNumber
                 << ", Compiler error: The operator \"" << text
@@ -244,7 +260,8 @@ std::string TreeNode::getType(const CompilationContext &context) const {
                            children[0].getType(context),
                            children[1].getType(context));
   }
-  if (text.size() == 2 and text[1] == '=') // Assignment operators
+  if (text.size() == 2 and text[1] == '=' and text[0] != '<' and
+      text[0] != '>') // Assignment operators
   {
     if (children.size() < 2) {
       std::cerr << "Line " << lineNumber << ", Column " << columnNumber
@@ -336,12 +353,13 @@ std::string TreeNode::getType(const CompilationContext &context) const {
         std::find_if(context.structures.begin(), context.structures.end(),
                      [=](structure str) { return str.name == structureName; });
     if (iteratorPointingToTheStructure == context.structures.end()) {
-      std::cerr
-          << "Line " << children[0].lineNumber << ", Column "
-          << children[0].columnNumber << ", Compiler error: The instance \""
-          << children[0].text << "\" has the type \"" << structureName
-          << "\", which doesn't appear to be a structure name. Quitting now!"
-          << std::endl;
+      std::cerr << "Line " << children[0].lineNumber << ", Column "
+                << children[0].columnNumber
+                << ", Compiler error: The instance \"" << children[0].text
+                << "\" has the type \"" << structureName
+                << "\", which doesn't appear to be a structure name. Did you "
+                   "perhaps use `.` instead of `->`? Quitting now!"
+                << std::endl;
       exit(1);
     }
     std::string memberName = children[1].text;

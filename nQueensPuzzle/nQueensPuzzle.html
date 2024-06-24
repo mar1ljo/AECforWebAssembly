@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <!-- See Arithmetic Operators Test for explanations.-->
 <html lang="en">
   <head>
@@ -36,9 +36,9 @@
     <br />
     <b>This only works in very modern browsers.</b> I'm not too interested in
     targeting archaic browsers here. This only works in Firefox 62 and newer or
-    Chrome 69 and newer. After a few years (if not months), all JavaScript
-    environments will become as capable as they are, rather than like Internet
-    Explorer.<br /><br />
+    Chrome 69 and newer (those with support <code>WebAssembly.Global</code>).
+    After a few years (if not months), all JavaScript environments will become
+    as capable as they are, rather than like Internet Explorer.<br /><br />
     <form>
       <label for="enterTheNumber"
         >Enter the number <i>n</i> (between 1 and 12):</label
@@ -56,11 +56,37 @@
     <span id="format_as_code"></span>
     <br />
     You can see the source code of the AEC program
-    <a href="nQueensPuzzle.aec.html">here</a>.
+    <a href="nQueensPuzzle.aec.html">here</a>. It may be a little hard to
+    understand. If that's the case, try first understanding the
+    <a href="permutationsTest.html">Permutations Test</a>, as it uses the same
+    algorithm to solve a simpler problem.<br /><br />
+    UPDATE on 19/02/2024: I've ported this program to the x86 dialect of AEC.
+    The source code is available in this <a href="Duktape.zip">ZIP archive</a>,
+    in the file <code>nQueensPuzzle.aec</code>. Or, in case you want to risk
+    getting a virus from my computer, you can download this
+    <a
+      href="https://github.com/FlatAssembler/ArithmeticExpressionCompiler/raw/master/ArithmeticExpressionCompiler.zip"
+      >ZIP archive</a
+    >
+    which contains both the source code and the Windows executable. The x86
+    dialect of AEC doesn't support functions and it doesn't support structures.
+    I hope you can appreciate how they make the code easier to understand. The
+    WebAssembly version of this program uses recursion, whereas the x86 version
+    of this program uses the stack instead of recursion.<br /><br />
+    UPDATE on 24/02/2024: I have started
+    <a
+      href="https://www.reddit.com/r/ProgrammingLanguages/comments/1ay30y8/n_queens_puzzle_in_your_programming_language/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button"
+      >a Reddit thread about N Queens Puzzle in various programming languages</a
+    >. I had no idea such short solutions to the N Queens Puzzle were
+    possible.<br /><br />
+    UPDATE on 21/03/2024: I've started learning the Dart programming language
+    and have <a href="nQueensPuzzle.dart">ported this program to Dart</a>. It
+    uses an algorithm similar to the one used in the x86 AEC N Queens Puzzle
+    solution, except that the stack is a two-dimensional list.
     <script type="text/javascript">
       const stack_pointer = new WebAssembly.Global(
         { value: "i32", mutable: true },
-        0
+        0,
       );
       let memory = new WebAssembly.Memory({ initial: 1 });
       function printString(ptr) {
@@ -97,7 +123,7 @@
         });
       function invokeAECfunctions() {
         let originalNumber = parseInt(
-          document.getElementById("enterTheNumber").value
+          document.getElementById("enterTheNumber").value,
         );
         nQueensPuzzle(originalNumber);
       }
